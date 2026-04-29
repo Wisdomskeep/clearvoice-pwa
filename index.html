@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>ClearVoice — Noise Cancellation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="clearvoice.css">
+
+  <!-- ── PWA: installable on Android, iOS, and desktop ── -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#00d4aa">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="ClearVoice">
+
+  <!-- iOS-specific PWA tags (Safari Add to Home Screen) -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ClearVoice">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
+
+  <!-- Desktop (Windows tile) -->
+  <meta name="msapplication-TileColor" content="#070d0d">
+  <meta name="msapplication-TileImage" content="icons/icon-144.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+</head>
+<body>
+
+<div id="cv-app">
+
+  <!-- ══════════════════════════════════════════════ HEADER ══ -->
+  <header class="cv-header">
+    <div class="cv-header-left">
+      <span class="cv-logo">🎙</span>
+      <div>
+        <div class="cv-title">ClearVoice</div>
+        <div class="cv-subtitle">Noise Cancellation</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div id="cv-status-dot" class="cv-status-dot"></div>
+      <span id="cv-status-label" class="cv-status-label">Idle</span>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════════════ TABS ═══ -->
+  <nav class="cv-tabs">
+    <button class="cv-tab active" data-tab="monitor"  onclick="cvSwitchTab('monitor')">Monitor</button>
+    <button class="cv-tab"        data-tab="enroll"   onclick="cvSwitchTab('enroll')">Voice ID</button>
+    <button class="cv-tab"        data-tab="dialer"   onclick="cvSwitchTab('dialer')">Dialer</button>
+  </nav>
+
+  <!-- PWA install banner (shown only when browser fires beforeinstallprompt) -->
+  <div id="cv-install-bar" class="cv-install-bar hidden">
+    <span>Install ClearVoice on this device</span>
+    <button class="cv-btn cv-btn-accent" style="width:auto;padding:8px 16px;font-size:13px;"
+            onclick="cvInstallPwa()">Install App</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════ MONITOR TAB ══ -->
+  <div id="tab-monitor" class="cv-tab-content">
+
+    <!-- Power button -->
+    <button id="cv-start-btn" class="cv-start-btn" onclick="cvToggleEngine()">
+      <span id="cv-start-icon">⏻</span>
+      <span id="cv-start-text">Start Noise Filter</span>
+    </button>
+
+    <!-- Level meters -->
+    <div class="cv-card">
+      <div class="cv-card-title">Audio Levels</div>
+
+      <div class="cv-meter-row">
+        <span class="cv-meter-label">Mic In</span>
+        <div class="cv-meter-bar"><div id="meter-in-fill" class="cv-meter-fill"></div></div>
+        <span id="meter-in-db" class="cv-meter-db">— dB</span>
+      </div>
+
+      <div class="cv-meter-row">
+        <span class="cv-meter-label">Output</span>
+        <div class="cv-meter-bar"><div id="meter-out-fill" class="cv-meter-fill"></div></div>
+        <span id="meter-out-db" class="cv-meter-db">— dB</span>
+      </div>
+
+      <div class="cv-noise-removed">
+        <span class="cv-noise-removed-label">Noise Removed</span>
+        <span id="cv-noise-removed" class="cv-noise-removed-value">0.0 dB</span>
+      </div>
+    </div>
+
+    <!-- Strength -->
+    <div class="cv-card">
+      <div class="cv-card-title">Reduction Strength</div>
+      <div class="cv-slider-row">
+        <span class="cv-slider-label">Strength</span>
+        <input id="cv-strength" type="range" class="cv-slider"
+               min="0" max="1" step="0.05" value="0.8"
+               oninput="cvOnStrength(this.value)">
+        <span id="cv-strength-val" class="cv-slider-val">80%</span>
+      </div>
+      <div class="cv-info-text" style="margin-top:8px;">
+        Higher = more aggressive noise removal. Start at 80% and adjust.
+      </div>
+    </div>
+
+    <!-- Voice profile status -->
+    <div class="cv-card">
+      <div class="cv-card-title">Voice ID</div>
+      <div class="cv-profile-row">
+        <div>
+          <div id="cv-profile-badge" class="cv-profile-badge">
+            <span class="dot"></span>
+            <span id="cv-profile-status">Not enrolled</span>
+          </div>
+          <div id="cv-profile-pitch" class="cv-profile-pitch" style="display:none;"></div>
+        </div>
+        <button class="cv-btn" style="width:auto;padding:8px 14px;font-size:12px;"
+                onclick="cvSwitchTab('enroll')">Enroll →</button>
+      </div>
+      <div class="cv-confidence-row" id="cv-confidence-row" style="display:none;">
+        <span class="cv-confidence-label">Confidence</span>
+        <div class="cv-confidence-bar">
+          <div id="cv-confidence-fill" class="cv-confidence-fill"></div>
+        </div>
+        <span id="cv-confidence-pct" class="cv-confidence-pct">—%</span>
+      </div>
+    </div>
+
+    <!-- Microphone selector -->
+    <div class="cv-card">
+      <div class="cv-card-title">Microphone</div>
+      <div class="cv-input-group" style="margin-bottom:0;">
+        <select id="cv-mic-select" class="cv-input" onchange="cvOnMicChange(this.value)">
+          <option value="">Default Microphone</option>
+        </select>
+      </div>
+    </div>
+
+  </div><!-- end monitor tab -->
+
+  <!-- ══════════════════════════════════════════ ENROLL TAB ══ -->
+  <div id="tab-enroll" class="cv-tab-content hidden">
+
+    <div class="cv-card">
+      <div class="cv-card-title">Current Profile</div>
+      <div id="enroll-current-status" class="cv-profile-badge">
+        <span class="dot"></span>
+        <span>Not enrolled</span>
+      </div>
+      <div id="enroll-current-detail" class="cv-profile-pitch" style="display:none;margin-top:4px;"></div>
+
+      <div class="cv-divider" style="margin:12px 0;"></div>
+      <button id="enroll-clear-btn" class="cv-btn cv-btn-red"
+              style="display:none;" onclick="cvClearProfile()">
+        🗑 Clear Profile
+      </button>
+    </div>
+
+    <div class="cv-card">
+      <div class="cv-card-title">Enroll Your Voice</div>
+
+      <p class="cv-enroll-prompt" id="enroll-instructions">
+        Speak naturally for <em>10 seconds</em>.<br>
+        Tell us about your day, describe your work, anything — just keep talking.
+        The app will learn your unique voice pitch to filter out coworkers.
+      </p>
+
+      <!-- Progress (hidden until enrollment starts) -->
+      <div id="enroll-progress-wrap" style="display:none;">
+        <div class="cv-pitch-display" id="enroll-live-pitch">— Hz</div>
+        <div class="cv-pitch-label">Live pitch detection</div>
+        <div style="margin-top:14px;">
+          <div class="cv-progress-bar">
+            <div id="enroll-progress-fill" class="cv-progress-fill"></div>
+          </div>
+          <div id="enroll-progress-label" class="cv-progress-label">0s / 10s</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+          <div class="cv-recording-pulse"></div>
+          <span style="font-size:12px;color:var(--text-muted);">Recording…</span>
+        </div>
+      </div>
+
+      <!-- Result (hidden until done) -->
+      <div id="enroll-result" style="display:none;">
+        <div class="cv-pitch-display" id="enroll-result-pitch"></div>
+        <div class="cv-pitch-label" id="enroll-result-label"></div>
+      </div>
+
+      <button id="enroll-btn" class="cv-btn cv-btn-accent" style="margin-top:14px;"
+              onclick="cvStartEnrollment()">
+        🎙 Start Enrollment
+      </button>
+    </div>
+
+    <div class="cv-card">
+      <div class="cv-card-title">How it works</div>
+      <p class="cv-info-text">
+        Everyone's voice has a characteristic <strong>pitch (F0)</strong> —
+        men typically 85–155 Hz, women 165–255 Hz.  After enrollment,
+        ClearVoice knows your range and applies extra suppression when it
+        detects a voice at a different pitch (coworker, nearby TV, etc.).
+      </p>
+    </div>
+
+  </div><!-- end enroll tab -->
+
+  <!-- ══════════════════════════════════════════ DIALER TAB ══ -->
+  <div id="tab-dialer" class="cv-tab-content hidden">
+
+    <!-- SIP connection -->
+    <div class="cv-card">
+      <div class="cv-card-title">VICIdial / SIP Server</div>
+
+      <div class="cv-input-group">
+        <label class="cv-input-label">Server (hostname or wss://...)</label>
+        <input id="sip-server" class="cv-input" type="text"
+               placeholder="limitless.thevoyagenetworks.com"
+               value="" autocomplete="off" spellcheck="false">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="cv-input-group" style="margin-bottom:0;">
+          <label class="cv-input-label">Agent ID</label>
+          <input id="sip-user" class="cv-input" type="text" placeholder="8022"
+                 autocomplete="off">
+        </div>
+        <div class="cv-input-group" style="margin-bottom:0;">
+          <label class="cv-input-label">Password</label>
+          <input id="sip-password" class="cv-input" type="password"
+                 placeholder="••••••" autocomplete="current-password">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+        <button id="sip-connect-btn" class="cv-btn cv-btn-accent"
+                onclick="cvSipConnect()">Connect</button>
+        <button id="sip-disconnect-btn" class="cv-btn cv-btn-red"
+                style="display:none;" onclick="cvSipDisconnect()">Disconnect</button>
+      </div>
+
+      <div id="sip-status" class="cv-info-text" style="margin-top:10px;">
+        Status: <span id="sip-status-text">Disconnected</span>
+      </div>
+    </div>
+
+    <!-- Dial pad -->
+    <div class="cv-card">
+      <div class="cv-card-title">Dial Pad</div>
+
+      <div id="cv-dial-display" class="cv-dial-display">&nbsp;</div>
+
+      <div class="cv-dialpad">
+        <button class="cv-dial-key" onclick="cvDialKey('1')">1<sub></sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('2')">2<sub>ABC</sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('3')">3<sub>DEF</sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('4')">4<sub>GHI</sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('5')">5<sub>JKL</sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('6')">6<sub>MNO</sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('7')">7<sub>PQRS</sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('8')">8<sub>TUV</sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('9')">9<sub>WXYZ</sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('*')">*<sub></sub></button>
+        <button class="cv-dial-key" onclick="cvDialKey('0')">0<sub>+</sub></button>
+        <button class="cv-dial-key" onclick="cvDialBackspace()">⌫<sub></sub></button>
+      </div>
+
+      <div class="cv-call-actions">
+        <button id="dial-call-btn" class="cv-btn cv-btn-green"
+                onclick="cvDialCall()">📞 Call</button>
+        <button class="cv-btn" onclick="cvDialClear()">✕ Clear</button>
+      </div>
+
+      <div class="cv-info-text" style="margin-top:10px;">
+        Noise-cancelled audio is sent automatically during calls.<br>
+        Requires VICIdial WebRTC/SIP (chan_pjsip + WebSocket).
+      </div>
+    </div>
+
+  </div><!-- end dialer tab -->
+
+</div><!-- end cv-app -->
+
+<!-- ══════════════════════════════════════ IN-CALL OVERLAY ══ -->
+<div id="cv-call-overlay" class="hidden">
+  <div class="cv-call-avatar">👤</div>
+  <div id="call-number" class="cv-call-number">—</div>
+  <div id="call-status-text" class="cv-call-status">Connecting…</div>
+  <div id="call-timer" class="cv-call-timer">00:00</div>
+
+  <div class="cv-call-noise-badge">
+    <span class="dot"></span>
+    Noise Filter Active
+  </div>
+
+  <div class="cv-call-controls">
+    <div style="text-align:center;">
+      <button id="call-mute-btn" class="cv-call-btn"
+              style="background:var(--bg-card);color:var(--text);"
+              onclick="cvCallMute()">🎤</button>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Mute</div>
+    </div>
+    <div style="text-align:center;">
+      <button id="call-speaker-btn" class="cv-call-btn"
+              style="background:var(--bg-card);color:var(--text);"
+              onclick="cvCallSpeaker()">🔊</button>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Speaker</div>
+    </div>
+  </div>
+
+  <button class="cv-hangup-btn" onclick="cvHangup()">📵</button>
+</div>
+
+<!-- Capacitor (must be before app scripts) -->
+<script type="module" src="capacitor-init.js"></script>
+
+<!-- JsSIP bundle (generated from npm package via esbuild) -->
+<script src="lib/jssip.bundle.js"></script>
+
+<!-- ClearVoice modules -->
+<script src="voice-profile.js"></script>
+<script src="audio-engine.js"></script>
+<script src="sip-client.js"></script>
+<script src="clearvoice.js"></script>
+
+</body>
+</html>
